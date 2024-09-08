@@ -4,10 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'app.py'
-      - 'requirements.txt'
-      - '.github/workflows/deploy.yml'
     paths-ignore:
       - 'docs/**'
       - 'README.md'
@@ -32,56 +28,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Set Up SSH Key
-        run: |
-          # Escreve a chave privada em um arquivo temporário
-          echo "${{ secrets.EC2_PRIVATE_KEY }}" > /tmp/ec2-key.pem
-          chmod 600 /tmp/ec2-key.pem
-
-      - name: SSH into EC2 and Deploy
+      - name: Deploy to AWS EC2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: 'us-east-1'
+          EC2_IP: ${{ secrets.EC2_IP }}  # Certifique-se de armazenar o IP da instância EC2 como um segredo
+          EC2_PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}
         run: |
-          ssh -i /tmp/ec2-key.pem -o StrictHostKeyChecking=no ec2-user@3.89.71.132 << EOF
-            # Remove o diretório da aplicação se existir
-            if [ -d "/home/ec2-user/app" ]; then
-              echo "Removendo o diretório existente /home/ec2-user/app..."
-              sudo rm -rf /home/ec2-user/app
-            fi
+          # Escreve a chave privada na máquina temporária
+          echo "$EC2_PRIVATE_KEY" > /tmp/ec2-key.pem
+          chmod 400 /tmp/ec2-key.pem
 
-            # Cria o diretório da aplicação
-            mkdir -p /home/ec2-user/app
+          # Teste de conexão SSH
+          ssh -o StrictHostKeyChecking=no -i "/tmp/ec2-key.pem" ec2-user@$EC2_IP "echo 'SSH Connection Test Successful'"
+
+          # Deploy da aplicação
+          ssh -o StrictHostKeyChecking=no -i "/tmp/ec2-key.pem" ec2-user@$EC2_IP << EOF
             cd /home/ec2-user/app
-
-            # Instala git se não estiver instalado
-            sudo yum install -y git || sudo apt-get install -y git
-
-            # Clona o repositório novamente
-            git clone https://github.com/seu-usuario/seu-repositorio.git .
-
-            # Verifica ou cria o ambiente virtual Python
-            if [ ! -d "/home/ec2-user/myenv" ]; then
-              python3 -m venv /home/ec2-user/myenv
-            fi
-
-            # Ativa o ambiente virtual
-            . /home/ec2-user/myenv/bin/activate
-
-            # Instala as dependências
-            if [ -f requirements.txt ]; then
-              pip install --upgrade pip
-              pip install -r requirements.txt
-            else
-              echo "Arquivo requirements.txt não encontrado!"
-            fi
-
-            # Para qualquer processo existente do Gunicorn
-            sudo fuser -k 5000/tcp || true
-
-            # Inicia o Gunicorn para servir o app Flask
-            nohup gunicorn --bind 0.0.0.0:5000 app:app > gunicorn.log 2>&1 & disown
-
-            echo "Deploy concluído com sucesso!"
+            git pull origin main
+            sudo systemctl restart gunicorn
           EOF
