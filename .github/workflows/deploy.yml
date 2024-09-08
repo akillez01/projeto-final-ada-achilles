@@ -7,7 +7,6 @@ on:
     paths-ignore:
       - 'docs/**'
       - 'README.md'
-      - 'README_EN.md'
       - 'LICENSE'
 
 jobs:
@@ -39,7 +38,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: 'us-east-1'
         run: |
-          ssh -i /tmp/ec2-key.pem -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} << EOF
+          ssh -i /tmp/ec2-key.pem -o StrictHostKeyChecking=no -o LogLevel=DEBUG ec2-user@${{ secrets.EC2_IP }} << EOF
             # Remove the /home/ec2-user/app directory if it exists
             if [ -d "/home/ec2-user/app" ]; then
               echo "Removing existing /home/ec2-user/app directory..."
