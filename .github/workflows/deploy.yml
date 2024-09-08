@@ -42,4 +42,7 @@ jobs:
         run: |
           echo "$EC2_PRIVATE_KEY" > /tmp/ec2-key.pem
           chmod 400 /tmp/ec2-key.pem
+          # Testar a conexão SSH antes do deploy
+          ssh -o StrictHostKeyChecking=no -i "/tmp/ec2-key.pem" ec2-user@$EC2_IP "echo 'SSH Connection Test Successful'"
+          # Comando para fazer o deploy
           ssh -i "/tmp/ec2-key.pem" ec2-user@$EC2_IP "cd /home/ec2-user/app && git pull origin main && systemctl restart gunicorn"
