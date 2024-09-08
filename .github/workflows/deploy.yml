@@ -28,24 +28,59 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Deploy to AWS EC2
+      - name: Set Up SSH Key
+        run: |
+          echo "${{ secrets.EC2_PRIVATE_KEY }}" > /tmp/ec2-key.pem
+          chmod 600 /tmp/ec2-key.pem
+
+      - name: SSH into EC2 and Deploy
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: 'us-east-1'
-          EC2_IP: ${{ secrets.EC2_IP }}  # Certifique-se de armazenar o IP da instância EC2 como um segredo
-          EC2_PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}
         run: |
-          # Escreve a chave privada na máquina temporária
-          echo "$EC2_PRIVATE_KEY" > /tmp/ec2-key.pem
-          chmod 400 /tmp/ec2-key.pem
+          ssh -i /tmp/ec2-key.pem -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP }} << EOF
+            # Remove the /home/ec2-user/app directory if it exists
+            if [ -d "/home/ec2-user/app" ]; then
+              echo "Removing existing /home/ec2-user/app directory..."
+              sudo rm -rf /home/ec2-user/app
+            fi
 
-          # Teste de conexão SSH
-          ssh -o StrictHostKeyChecking=no -i "/tmp/ec2-key.pem" ec2-user@$EC2_IP "echo 'SSH Connection Test Successful'"
-
-          # Deploy da aplicação
-          ssh -o StrictHostKeyChecking=no -i "/tmp/ec2-key.pem" ec2-user@$EC2_IP << EOF
+            # Recreate the /home/ec2-user/app directory
+            mkdir -p /home/ec2-user/app
             cd /home/ec2-user/app
-            git pull origin main
-            sudo systemctl restart gunicorn
+
+            # Install git if not already installed
+            sudo yum install -y git || sudo apt-get install -y git
+
+            # Clone o seu repositório
+            git clone https://github.com/akillez01/projeto-final-ada-achilles.git .
+
+            # Certifique-se que o ambiente virtual existe, crie se não
+            if [ ! -d "/home/ec2-user/myenv" ]; then
+              python3 -m venv /home/ec2-user/myenv
+            fi
+
+            # Ative o ambiente virtual
+            . /home/ec2-user/myenv/bin/activate
+
+            # Instale os requisitos, incluindo o Flask
+            if [ -f requirements.txt ]; then
+              pip install --upgrade pip
+              pip install -r requirements.txt
+            else
+              echo "requirements.txt file not found!"
+            fi
+
+            # Instale Flask explicitamente, caso esteja faltando
+            pip install flask
+
+            # Pare qualquer processo Gunicorn existente na porta 5000
+            sudo fuser -k 5000/tcp || true
+
+            # Inicie o Gunicorn para servir a aplicação Flask
+            nohup gunicorn --bind 0.0.0.0:5000 app:app > gunicorn.log 2>&1 & disown
+
+            # Mensagem de log para confirmar sucesso no deploy
+            echo "Deployment completed successfully!"
           EOF
